@@ -1,11 +1,9 @@
 // 消消乐 Service Worker —— 离线缓存
-const CACHE_NAME = 'xiaoxiaole-v1';
+const CACHE_NAME = 'xiaoxiaole-v2';
 const CORE_ASSETS = [
   './',
-  './消消乐.html',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png'
+  './index.html',
+  './manifest.json'
 ];
 
 self.addEventListener('install', event => {
@@ -22,17 +20,15 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Cache-first，离线可用
+// Network-first：优先拿线上最新，离线时才用缓存
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  if (!event.request.url.startsWith(self.location.origin)) return;
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      return cached || fetch(event.request).then(resp => {
-        // 新请求顺手缓存
-        const copy = resp.clone();
-        caches.open(CACHE_NAME).then(c => c.put(event.request, copy));
-        return resp;
-      }).catch(() => cached);
-    })
+    fetch(event.request).then(resp => {
+      const copy = resp.clone();
+      caches.open(CACHE_NAME).then(c => c.put(event.request, copy));
+      return resp;
+    }).catch(() => caches.match(event.request))
   );
 });
