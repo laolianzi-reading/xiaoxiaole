@@ -128,6 +128,31 @@
     flex:1; display:flex; align-items:center; justify-content:center;
     width:100%; padding: 0 12px;
   }
+  .tools-bar {
+    width:100%; max-width:480px;
+    display:flex; align-items:center; gap:10px;
+    padding: 4px 16px 6px;
+  }
+  .tool-btn {
+    position:relative;
+    width:40px; height:40px; border-radius:12px;
+    background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.1);
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .tool-btn:active { transform: scale(.92); }
+  .tool-btn.active { background: linear-gradient(135deg,#FF5252,#FF9800); }
+  .tool-btn.disabled { opacity:.35; pointer-events:none; }
+  .tool-count {
+    position:absolute; bottom:-4px; right:-4px;
+    background:#FFD54F; color:#333; font-size:10px; font-weight:800;
+    min-width:16px; height:16px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center; padding:0 4px;
+  }
+  .streak-display {
+    margin-left:auto; font-size:12px; font-weight:700; color:#FFD54F;
+    opacity:.9;
+  }
   #board-wrap.shake { animation: shake .18s linear; }
   @keyframes shake {
     0%,100% { transform: translateX(0); }
@@ -216,6 +241,21 @@
       </div>
       <div class="box"><div class="label">步数</div><div class="value warn" id="moves">0</div></div>
     </div>
+    <div class="tools-bar">
+      <button class="tool-btn" id="tool-hammer" title="锤子">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 7l-5 5"/><path d="M12.5 4.5l4 4L20 4l-3.5-3.5-4 4z"/><path d="M11 13l-7 7 2 2 7-7"/>
+        </svg>
+        <span class="tool-count" id="hammer-count">1</span>
+      </button>
+      <button class="tool-btn" id="tool-shuffle" title="刷新">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/>
+        </svg>
+        <span class="tool-count" id="shuffle-count">1</span>
+      </button>
+      <div class="streak-display" id="streak-display"></div>
+    </div>
     <div id="board-wrap"><canvas id="board"></canvas></div>
     <div class="footer" id="level-label">第 1 关</div>
   </div>
@@ -288,6 +328,7 @@
   let particles=[];
   let score=0, moves=0, busy=false, selected=null, combo=0;
   let currentLevel=0, collectCount=0;
+  let hammerCount=1, shuffleCount=1, activeTool=null;
 
   // ===== Canvas =====
   const canvas=document.getElementById('board');
@@ -446,6 +487,21 @@
           ctx.beginPath(); ctx.arc(v.x,v.y,r*.3,0,Math.PI*2); ctx.fill();
           ctx.strokeStyle='#FFEB3B'; ctx.lineWidth=1.5;
           ctx.beginPath(); ctx.arc(v.x,v.y,r*.55,0,Math.PI*2); ctx.stroke();
+        } else if(v.special==='rainbow'){
+          // 彩虹球：白色发光球 + 虹彩外圈
+          const grad=ctx.createRadialGradient(v.x,v.y,0,v.x,v.y,r*.7);
+          grad.addColorStop(0,'#ffffff');
+          grad.addColorStop(0.5,'#E1BEE7');
+          grad.addColorStop(1,'#7C4DFF');
+          ctx.fillStyle=grad;
+          ctx.beginPath(); ctx.arc(v.x,v.y,r*.7,0,Math.PI*2); ctx.fill();
+          const hues=[0,60,120,180,240,300];
+          hues.forEach((h,i)=>{
+            ctx.strokeStyle=`hsl(${h},90%,65%)`; ctx.lineWidth=2;
+            ctx.beginPath();
+            ctx.arc(v.x,v.y,r*.85, i*Math.PI/3, (i+0.7)*Math.PI/3);
+            ctx.stroke();
+          });
         }
         ctx.restore();
       }
@@ -534,7 +590,7 @@
           const midI=Math.floor(cl.len/2);
           const mc=cl.horizontal?cl.col+midI:cl.col;
           const mr=cl.horizontal?cl.row:cl.row+midI;
-          const sp=cl.len>=5?'bomb':(cl.horizontal?'h':'v');
+          const sp=cl.len>=5?'rainbow':(cl.horizontal?'h':'v');
           spawnAt.push({c:mc,r:mr,special:sp});
           removeSet.delete(mc+','+mr);
         }
@@ -657,6 +713,12 @@
   }
   function hideCombo(){ document.getElementById('combo-pop').classList.add('fade'); }
 
+  function updateStreakDisplay(){
+    const el=document.getElementById('streak-display');
+    const s=save.winStreak||0;
+    el.textContent = s>1 ? `🔥 连胜 ×${s}` : '';
+  }
+
   function endGame(win){
     const lv=LEVELS[currentLevel];
     let star=0;
@@ -666,7 +728,15 @@
       if(currentLevel+2>save.highestUnlocked && currentLevel+1<LEVELS.length){
         save.highestUnlocked=currentLevel+2;
       }
+      // 连胜奖励
+      save.winStreak=(save.winStreak||0)+1;
+      if([3,5,8].includes(save.winStreak)){
+        hammerCount+=1;
+        document.getElementById('hammer-count').textContent=hammerCount;
+      }
       persist();
+    } else {
+      save.winStreak=0; persist();
     }
     document.getElementById('modal-title').textContent=win?'通关！':'差一点';
     const goal=lv.goal;
@@ -721,7 +791,11 @@
     currentLevel=idx;
     const lv=LEVELS[idx];
     score=0; moves=lv.moves; selected=null; particles=[]; combo=0; collectCount=0;
+    hammerCount=1; shuffleCount=1; activeTool=null;
     document.getElementById('level-label').textContent=`第 ${idx+1} 关`;
+    document.getElementById('hammer-count').textContent=hammerCount;
+    document.getElementById('shuffle-count').textContent=shuffleCount;
+    updateStreakDisplay();
     // HUD 目标显示
     const goalEl=document.getElementById('goal-display');
     if(lv.goal.type==='score'){
@@ -778,6 +852,25 @@
     if(busy) return;
     const rect=canvas.getBoundingClientRect();
     const p={col:Math.floor((e.clientX-rect.left)/cell),row:Math.floor((e.clientY-rect.top)/cell)};
+    // 锤子模式：消除任意格
+    if(activeTool==='hammer'){
+      if(hammerCount<=0) return;
+      hammerCount--;
+      document.getElementById('hammer-count').textContent=hammerCount;
+      document.getElementById('tool-hammer').classList.remove('active');
+      activeTool=null;
+      const goal=LEVELS[currentLevel].goal;
+      if(goal.type==='collect' && grid[p.col][p.row].type===goal.color) collectCount++;
+      spawnParticles(p.col,p.row,GEMS[grid[p.col][p.row].type]?.color||'#fff');
+      if(grid[p.col][p.row].obstacle==='ice2') grid[p.col][p.row].obstacle='ice1';
+      else if(grid[p.col][p.row].obstacle==='ice1') grid[p.col][p.row].obstacle=null;
+      grid[p.col][p.row].type=-1;
+      score+=10; updateHUD();
+      busy=true;
+      collapseAndRefill();
+      setTimeout(()=>{ busy=false; afterMove(); }, 300);
+      return;
+    }
     if(selected && adjacent(selected,p)){ doSwap(selected,p); selected=null; return; }
     selected=p;
   });
@@ -789,6 +882,49 @@
     swapType(a.col,a.row,b.col,b.row);
     const va=vis[a.col][a.row], vb=vis[b.col][b.row];
     vis[a.col][a.row]=vb; vis[b.col][b.row]=va;
+
+    // ===== 彩虹球交换 =====
+    if(sa==='rainbow' || sb==='rainbow'){
+      sfx.swap();
+      await new Promise(res=>{
+        tweenVis([
+          {v:vis[a.col][a.row],fx:a.col*cell+cell/2,fy:a.row*cell+cell/2},
+          {v:vis[b.col][b.row],fx:b.col*cell+cell/2,fy:b.row*cell+cell/2},
+        ],150,res);
+      });
+      let cells=[];
+      if(sa==='rainbow' && sb==='rainbow'){
+        for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++) cells.push({c,r});
+      } else {
+        const otherPos = sa==='rainbow' ? b : a;
+        const targetType = grid[otherPos.col][otherPos.row].type;
+        for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
+          if(grid[c][r].type===targetType) cells.push({c,r});
+        }
+      }
+      const goal=LEVELS[currentLevel].goal;
+      cells.forEach(({c,r})=>{
+        if(grid[c][r].type<0) return;
+        if(goal.type==='collect' && grid[c][r].type===goal.color) collectCount++;
+        spawnParticles(c,r,GEMS[grid[c][r].type]?.color||'#fff');
+        if(grid[c][r].obstacle==='ice2') grid[c][r].obstacle='ice1';
+        else if(grid[c][r].obstacle==='ice1') grid[c][r].obstacle=null;
+        grid[c][r].type=-1;
+      });
+      score+=cells.length*10; updateHUD();
+      vibrate([50,50,50]);
+      const w=document.getElementById('board-wrap'); w.classList.remove('shake'); void w.offsetWidth; w.classList.add('shake');
+      showCombo('彩虹爆发');
+      await new Promise(res=>{
+        tweenVis(cells.map(({c,r})=>({v:vis[c][r],fx:vis[c][r].x,fy:vis[c][r].y,fs:0,fa:0})),250,res);
+      });
+      hideCombo();
+      collapseAndRefill();
+      await wait(220);
+      moves--; updateHUD();
+      busy=false; afterMove();
+      return;
+    }
 
     // ===== 组合技检测：两个特殊宝石交换 =====
     const sa=grid[a.col][a.row].special, sb=grid[b.col][b.row].special;
@@ -906,6 +1042,33 @@
   document.getElementById('btn-extra-no').addEventListener('click',()=>{
     document.getElementById('modal-extra').classList.remove('show');
     endGame(false);
+  });
+
+  // ===== 道具 =====
+  document.getElementById('tool-hammer').addEventListener('click',()=>{
+    if(hammerCount<=0||busy) return;
+    activeTool = activeTool==='hammer' ? null : 'hammer';
+    document.getElementById('tool-hammer').classList.toggle('active', activeTool==='hammer');
+  });
+  document.getElementById('tool-shuffle').addEventListener('click',()=>{
+    if(shuffleCount<=0||busy) return;
+    shuffleCount--;
+    document.getElementById('shuffle-count').textContent=shuffleCount;
+    busy=true;
+    // 简单重排：重新随机类型直到无 cluster
+    for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
+      if(!grid[c][r].obstacle) grid[c][r].type=randType();
+    }
+    let guard=0;
+    while(findClusters().length>0 && guard<50){
+      for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
+        if(!grid[c][r].obstacle) grid[c][r].type=randType();
+      }
+      guard++;
+    }
+    syncVis();
+    busy=false;
+    vibrate(20);
   });
 
   window.addEventListener('resize',()=>{ resize(); });
