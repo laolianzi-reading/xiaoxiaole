@@ -566,9 +566,15 @@
   }
 
   // ===== 食物宝石绘制 =====
-  // 每种 type 画完整食物图案，cx/cy 中心，r 半径
+  // 每种 type：先画高饱和圆底（远看靠颜色区分），再画缩小的食物图案（近看识别）
+  const GEM_BG = ['#E53935','#FDD835','#1E88E5','#FB8C00','#8E24AA','#43A047'];
   function drawGem(c,type,x,y,r){
     c.save(); c.translate(x,y);
+    // 高饱和圆底
+    c.fillStyle=GEM_BG[type];
+    c.beginPath(); c.arc(0,0,r*.92,0,Math.PI*2); c.fill();
+    // 食物图案缩小到 65%
+    c.save(); c.scale(.65,.65);
     switch(type){
       case 0: { // 汉堡
         c.fillStyle='#E8A54B';
@@ -619,8 +625,6 @@
         break;
       }
       case 4: { // 金拱门 M
-        c.fillStyle='#DA291C';
-        c.beginPath(); c.arc(0,0,r*.82,0,Math.PI*2); c.fill();
         c.strokeStyle='#FFC72C'; c.lineWidth=r*.16;
         c.lineCap='round'; c.lineJoin='round';
         c.beginPath();
@@ -644,7 +648,8 @@
         break;
       }
     }
-    c.restore();
+    c.restore(); // scale
+    c.restore(); // translate
   }
   function render(){
     if(!vis || !vis.length) return;
