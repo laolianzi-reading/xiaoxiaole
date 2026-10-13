@@ -311,7 +311,7 @@
     { moves:16, stars:[1200,1800,2500], goal:{type:'score',target:2500}, ice:1 },
     { moves:16, stars:[1400,2000,2800], goal:{type:'collect',color:5,target:35}, ice:2 },
   ];
-  const DAILY_EXTRA_MAX = 3;
+  const DAILY_EXTRA_MAX = 4;
 
   // ===== 存档 =====
   const SAVE_KEY='xiaoxiaole_save_v1';
@@ -755,7 +755,12 @@
   function askExtraMove(){
     syncDaily();
     if(save.daily.extraLeft>0){
-      document.getElementById('extra-desc').textContent = `今日还可免费续步 ${save.daily.extraLeft} 次，续 5 步继续？`;
+      const left=save.daily.extraLeft;
+      let from;
+      if(left===4) from='来自狗嘟的助力';
+      else if(left===3) from='来自狗齐的助力';
+      else from='来自老公的助力';
+      document.getElementById('extra-desc').innerHTML = `${from}<br>要不要续 5 步继续挑战？<br><span style="opacity:.6;font-size:12px">今日剩余 ${left} 次助力</span>`;
       document.getElementById('modal-extra').classList.add('show');
     } else {
       endGame(false);
