@@ -291,7 +291,7 @@
   function randType(){ return Math.floor(Math.random()*TYPES); }
   function newGrid(){
     grid=[];
-    for(let c=0;c<COLS;c++){ grid[c]=[]; for(let r=0;r<ROWS;r++) grid[c][r]={type:randType()}; }
+    for(let c=0;c<COLS;c++){ grid[c]=[]; for(let r=0;r<ROWS;r++) grid[c][r]={type:randType(), special:null}; }
     while(findClusters().length>0){
       for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++) grid[c][r].type=randType();
     }
@@ -300,7 +300,7 @@
   }
   function syncVis(){
     vis=[];
-    for(let c=0;c<COLS;c++){ vis[c]=[]; for(let r=0;r<ROWS;r++) vis[c][r]={x:c*cell+cell/2,y:r*cell+cell/2,scale:1,alpha:1,type:grid[c][r].type}; }
+    for(let c=0;c<COLS;c++){ vis[c]=[]; for(let r=0;r<ROWS;r++) vis[c][r]={x:c*cell+cell/2,y:r*cell+cell/2,scale:1,alpha:1,type:grid[c][r].type,special:grid[c][r].special}; }
   }
   function findClusters(){
     const f=[];
@@ -326,7 +326,10 @@
     return false;
   }
   function swapType(c1,r1,c2,r2){
-    const t=grid[c1][r1].type; grid[c1][r1].type=grid[c2][r2].type; grid[c2][r2].type=t;
+    const a=grid[c1][r1], b=grid[c2][r2];
+    const tt=a.type, ts=a.special;
+    a.type=b.type; a.special=b.special;
+    b.type=tt; b.special=ts;
   }
   function spawnParticles(col,row,color){
     const cx=vis[col][row].x, cy=vis[col][row].y;
@@ -366,6 +369,30 @@
       ctx.restore();
       ctx.fillStyle='rgba(255,255,255,.4)';
       ctx.beginPath(); ctx.arc(v.x-size*0.18,v.y-size*0.18,size*0.12,0,Math.PI*2); ctx.fill();
+      // 特殊宝石标记
+      if(v.special){
+        ctx.save(); ctx.globalAlpha=v.alpha;
+        ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=2;
+        const r = size/2;
+        if(v.special==='h'){
+          ctx.beginPath();
+          ctx.moveTo(v.x-r*.7,v.y-r*.3); ctx.lineTo(v.x+r*.7,v.y-r*.3);
+          ctx.moveTo(v.x-r*.7,v.y+r*.3); ctx.lineTo(v.x+r*.7,v.y+r*.3);
+          ctx.stroke();
+        } else if(v.special==='v'){
+          ctx.beginPath();
+          ctx.moveTo(v.x-r*.3,v.y-r*.7); ctx.lineTo(v.x-r*.3,v.y+r*.7);
+          ctx.moveTo(v.x+r*.3,v.y-r*.7); ctx.lineTo(v.x+r*.3,v.y+r*.7);
+          ctx.stroke();
+        } else if(v.special==='bomb'){
+          // 中心星点
+          ctx.fillStyle='#FFD54F';
+          ctx.beginPath(); ctx.arc(v.x,v.y,r*.3,0,Math.PI*2); ctx.fill();
+          ctx.strokeStyle='#FFEB3B'; ctx.lineWidth=1.5;
+          ctx.beginPath(); ctx.arc(v.x,v.y,r*.55,0,Math.PI*2); ctx.stroke();
+        }
+        ctx.restore();
+      }
     }
     if(selected){
       ctx.strokeStyle='#FFD54F'; ctx.lineWidth=3;
@@ -442,21 +469,72 @@
   }
 
   // ===== 消除流程 =====
+  // 展开特殊宝石的消除范围（BFS）
+  function expandSpecial(cells){
+    const set = new Set(cells.map(({c,r})=>c+','+r));
+    const queue = [...cells];
+    while(queue.length){
+      const {c,r} = queue.shift();
+      const sp = grid[c][r]?.special;
+      if(!sp) continue;
+      let extra = [];
+      if(sp==='h'){ for(let i=0;i<COLS;i++) extra.push({c:i,r}); }
+      else if(sp==='v'){ for(let j=0;j<ROWS;j++) extra.push({c,r:j}); }
+      else if(sp==='bomb'){
+        for(let dc=-1;dc<=1;dc++) for(let dr=-1;dr<=1;dr++){
+          const nc=c+dc, nr=r+dr;
+          if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS) extra.push({c:nc,r:nr});
+        }
+      }
+      extra.forEach(({c:nc,r:nr})=>{
+        const k=nc+','+nr;
+        if(!set.has(k)){ set.add(k); queue.push({c:nc,r:nr}); }
+      });
+    }
+    return [...set].map(k=>{ const [c,r]=k.split(',').map(Number); return {c,r}; });
+  }
+
   async function resolveBoard(){
     busy=true; combo=0;
     while(true){
       const clusters=findClusters();
       if(clusters.length===0) break;
       combo++;
-      const cells=[];
+
+      // 1) 收集所有簇的 cell，并在长簇中间位置生成特殊宝石（保留不消除）
+      const removeSet = new Set();
+      const spawnAt = []; // {c,r,special}
       clusters.forEach(cl=>{
         for(let i=0;i<cl.len;i++){
-          const c=cl.horizontal?cl.col+i:cl.col, r=cl.horizontal?cl.row:cl.row+i;
-          cells.push({c,r});
-          grid[c][r].type=-1;
-          spawnParticles(c,r,GEMS[vis[c][r].type]?.color||'#fff');
+          const c = cl.horizontal ? cl.col+i : cl.col;
+          const r = cl.horizontal ? cl.row   : cl.row+i;
+          removeSet.add(c+','+r);
+        }
+        // 长簇升级：4连→条纹；≥5连→炸弹
+        if(cl.len>=4){
+          const midI = Math.floor(cl.len/2);
+          const mc = cl.horizontal ? cl.col+midI : cl.col;
+          const mr = cl.horizontal ? cl.row       : cl.row+midI;
+          const sp = cl.len>=5 ? 'bomb' : (cl.horizontal ? 'h' : 'v');
+          spawnAt.push({c:mc, r:mr, special:sp});
+          removeSet.delete(mc+','+mr); // 特殊宝石位置保留
         }
       });
+
+      // 2) 初始消除列表
+      const baseCells = [...removeSet].map(k=>{ const [c,r]=k.split(',').map(Number); return {c,r}; });
+
+      // 3) BFS 扩展特殊宝石范围
+      const cells = expandSpecial(baseCells);
+
+      // 4) 应用：生成特殊宝石 + 标记消除
+      spawnAt.forEach(({c,r,special})=>{ grid[c][r].special = special; vis[c][r].special = special; });
+      cells.forEach(({c,r})=>{
+        if(grid[c][r].type<0) return;
+        spawnParticles(c,r,GEMS[grid[c][r].type]?.color||'#fff');
+        grid[c][r].type=-1;
+      });
+
       score+=cells.length*10*combo; updateHUD();
       sfx.remove(combo);
       vibrate(combo>=3?[15,30,15]:10);
@@ -477,15 +555,17 @@
       for(let r=ROWS-1;r>=0;r--){
         if(grid[c][r].type!==-1){
           if(write!==r){
-            grid[c][write].type=grid[c][r].type; grid[c][r].type=-1;
+            grid[c][write].type=grid[c][r].type;
+            grid[c][write].special=grid[c][r].special;
+            grid[c][r].type=-1; grid[c][r].special=null;
             const tmp=vis[c][write]; vis[c][write]=vis[c][r]; vis[c][r]=tmp;
           }
           write--;
         }
       }
       for(let r=write;r>=0;r--){
-        grid[c][r].type=randType();
-        vis[c][r]={x:c*cell+cell/2,y:-cell+cell/2,scale:1,alpha:1,type:grid[c][r].type};
+        grid[c][r].type=randType(); grid[c][r].special=null;
+        vis[c][r]={x:c*cell+cell/2,y:-cell+cell/2,scale:1,alpha:1,type:grid[c][r].type,special:null};
       }
     }
     const items=[];
