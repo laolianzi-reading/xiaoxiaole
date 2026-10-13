@@ -34,6 +34,37 @@
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
   .app-sub { font-size: 13px; opacity:.6; margin-bottom: 24px; }
+  .user-bar {
+    width:100%; max-width:360px;
+    display:flex; align-items:center; gap:12px;
+    background: rgba(255,255,255,.08);
+    border-radius: 16px; padding: 10px 14px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .user-bar img {
+    width:48px; height:48px; border-radius:50%;
+    border: 2px solid #FFD54F;
+    object-fit: cover;
+    background: #222;
+  }
+  .user-bar .info { flex:1; min-width:0; }
+  .user-bar .nick { font-size:16px; font-weight:700; }
+  .user-bar .slogan { font-size:11px; opacity:.6; margin-top:2px; }
+
+  #greet-toast {
+    position: fixed; left:50%; top: calc(env(safe-area-inset-top) + 16px);
+    transform: translate(-50%, -120%);
+    background: linear-gradient(135deg,#FF5252,#FF9800);
+    color:#fff; padding: 12px 18px;
+    border-radius: 14px; font-size:13px; font-weight:600;
+    box-shadow: 0 8px 24px rgba(255,82,82,.4);
+    z-index: 20; max-width: 86vw; text-align:center;
+    transition: transform .4s cubic-bezier(.2,1.4,.4,1);
+    cursor:pointer;
+  }
+  #greet-toast.show { transform: translate(-50%, 0); }
+
   .level-grid {
     display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
     width: 100%; max-width: 360px;
@@ -161,6 +192,13 @@
   <div class="view" id="view-menu">
     <div class="app-title">飘飘雨的消消乐</div>
     <div class="app-sub">滑动或点选相邻宝石，完成关卡目标</div>
+    <div class="user-bar">
+      <img src="data:image/jpeg;base64,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" alt="avatar">
+      <div class="info">
+        <div class="nick">飘飘雨</div>
+        <div class="slogan">今天也要开心消除呀</div>
+      </div>
+    </div>
     <div class="level-grid" id="level-grid"></div>
     <div class="settings-row">
       <div class="setting-item"><span>音效</span><div class="switch on" id="sw-sound"></div></div>
@@ -182,6 +220,8 @@
     <div class="footer" id="level-label">第 1 关</div>
   </div>
 </div>
+
+<div id="greet-toast">老莲子提醒最可爱的老婆：可不要太贪玩哦！</div>
 
 <div id="combo-pop"></div>
 
@@ -878,6 +918,23 @@
   if('serviceWorker' in navigator){
     window.addEventListener('load',()=>{ navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
   }
+
+  // 每日首次登录问候
+  (function dailyGreet(){
+    const KEY='xiaoxiaole_last_greet';
+    const today=new Date().toISOString().slice(0,10);
+    let last='';
+    try{ last=localStorage.getItem(KEY)||''; }catch(e){}
+    if(last!==today){
+      const toast=document.getElementById('greet-toast');
+      setTimeout(()=>{
+        toast.classList.add('show');
+        try{ localStorage.setItem(KEY,today); }catch(e){}
+      },600);
+      toast.addEventListener('click',()=>toast.classList.remove('show'));
+      setTimeout(()=>toast.classList.remove('show'),5000);
+    }
+  })();
 })();
 </script>
 </body>
