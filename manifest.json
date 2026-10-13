@@ -1,0 +1,23 @@
+{
+  "name": "消消乐",
+  "short_name": "消消乐",
+  "description": "竖屏三消小游戏",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a3e",
+  "theme_color": "#3b2a6e",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
