@@ -430,8 +430,10 @@
     score=0; moves=lv.moves; selected=null; particles=[]; combo=0;
     document.getElementById('level-label').textContent = `第 ${idx+1} 关 · 目标 ${lv.stars[2]} 分`;
     document.getElementById('goal').textContent = lv.stars[2];
-    newGrid(); updateHUD();
     showView('game');
+    // 切到游戏视图后 board-wrap 才可见，此时重算 canvas 尺寸
+    resize();
+    newGrid(); updateHUD();
   }
 
   function updateHUD(){
