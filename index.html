@@ -887,6 +887,7 @@
     swapType(a.col,a.row,b.col,b.row);
     const va=vis[a.col][a.row], vb=vis[b.col][b.row];
     vis[a.col][a.row]=vb; vis[b.col][b.row]=va;
+    const sa=grid[a.col][a.row].special, sb=grid[b.col][b.row].special;
 
     // ===== 彩虹球交换 =====
     if(sa==='rainbow' || sb==='rainbow'){
@@ -932,7 +933,6 @@
     }
 
     // ===== 组合技检测：两个特殊宝石交换 =====
-    const sa=grid[a.col][a.row].special, sb=grid[b.col][b.row].special;
     if(sa && sb){
       sfx.swap();
       await new Promise(res=>{
