@@ -299,25 +299,135 @@
     { color:'#2196F3', shape:'pentagon'},
     { color:'#AB47BC', shape:'hexagon' },
   ];
-  // 关卡配置：goal.type='score' 达分通关；'collect' 收集指定颜色 N 个
-  // iceLevel: 0=无冰，1=单层冰，2=双层冰
+
+  // ===== 特殊元素注册表 =====
+  // 每个 special 注册 expand(c,r,set,queue) 递归扩展范围 + draw(v,ctx,r) 视觉
+  const SPECIALS = {
+    h: {
+      expand(c,r,set,queue){ for(let i=0;i<COLS;i++) pushSet(i,r,set,queue); },
+      draw(v,ctx,r){
+        ctx.beginPath();
+        ctx.moveTo(v.x-r*.7,v.y-r*.3); ctx.lineTo(v.x+r*.7,v.y-r*.3);
+        ctx.moveTo(v.x-r*.7,v.y+r*.3); ctx.lineTo(v.x+r*.7,v.y+r*.3);
+        ctx.stroke();
+      }
+    },
+    v: {
+      expand(c,r,set,queue){ for(let j=0;j<ROWS;j++) pushSet(c,j,set,queue); },
+      draw(v,ctx,r){
+        ctx.beginPath();
+        ctx.moveTo(v.x-r*.3,v.y-r*.7); ctx.lineTo(v.x-r*.3,v.y+r*.7);
+        ctx.moveTo(v.x+r*.3,v.y-r*.7); ctx.lineTo(v.x+r*.3,v.y+r*.7);
+        ctx.stroke();
+      }
+    },
+    bomb: {
+      expand(c,r,set,queue){
+        for(let dc=-1;dc<=1;dc++) for(let dr=-1;dr<=1;dr++){
+          const nc=c+dc,nr=r+dr;
+          if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS) pushSet(nc,nr,set,queue);
+        }
+      },
+      draw(v,ctx,r){
+        ctx.fillStyle='#FFD54F';
+        ctx.beginPath(); ctx.arc(v.x,v.y,r*.3,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#FFEB3B'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.arc(v.x,v.y,r*.55,0,Math.PI*2); ctx.stroke();
+      }
+    },
+    rainbow: {
+      expand: null, // 彩虹球不被动触发，只在交换时触发
+      draw(v,ctx,r){
+        const grad=ctx.createRadialGradient(v.x,v.y,0,v.x,v.y,r*.7);
+        grad.addColorStop(0,'#ffffff');
+        grad.addColorStop(0.5,'#E1BEE7');
+        grad.addColorStop(1,'#7C4DFF');
+        ctx.fillStyle=grad;
+        ctx.beginPath(); ctx.arc(v.x,v.y,r*.7,0,Math.PI*2); ctx.fill();
+        const hues=[0,60,120,180,240,300];
+        hues.forEach((h,i)=>{
+          ctx.strokeStyle=`hsl(${h},90%,65%)`; ctx.lineWidth=2;
+          ctx.beginPath();
+          ctx.arc(v.x,v.y,r*.85, i*Math.PI/3, (i+0.7)*Math.PI/3);
+          ctx.stroke();
+        });
+      }
+    }
+  };
+
+  // ===== 组合技矩阵 =====
+  function getCombo(sa, sb){
+    if(!sa || !sb) return null;
+    if(sa==='rainbow' && sb==='rainbow') return 'clearAll';
+    if(sa==='rainbow' || sb==='rainbow') return 'clearColor';
+    if(sa==='bomb' && sb==='bomb') return 'bigBomb';
+    if((sa==='h'&&sb==='v')||(sa==='v'&&sb==='h')) return 'cross';
+    return null;
+  }
+
+  // ===== 障碍物注册表 =====
+  // hit(cell): 该格被消除时障碍物怎么变化
+  const OBSTACLES = {
+    ice1: {
+      hit(){ return null; }, // 单层冰：消除一次即破
+      draw(c,r,ctx,cell){
+        ctx.save(); ctx.globalAlpha=0.5;
+        ctx.fillStyle='#B3E5FC';
+        ctx.fillRect(c*cell+1, r*cell+1, cell-2, cell-2);
+        ctx.strokeStyle='#E1F5FE'; ctx.lineWidth=2;
+        ctx.strokeRect(c*cell+2, r*cell+2, cell-4, cell-4);
+        ctx.restore();
+      }
+    },
+    ice2: {
+      hit(){ return 'ice1'; }, // 双层冰：消除一次变单层
+      draw(c,r,ctx,cell){
+        ctx.save(); ctx.globalAlpha=0.75;
+        ctx.fillStyle='#B3E5FC';
+        ctx.fillRect(c*cell+1, r*cell+1, cell-2, cell-2);
+        ctx.strokeStyle='#E1F5FE'; ctx.lineWidth=2;
+        ctx.strokeRect(c*cell+2, r*cell+2, cell-4, cell-4);
+        ctx.restore();
+      }
+    },
+    chain: {
+      hit(){ return 'chain'; }, // 铁链：本格消除不破链，需破邻格
+      draw(c,r,ctx,cell){
+        ctx.save();
+        ctx.strokeStyle='#9E9E9E'; ctx.lineWidth=3;
+        const cx=c*cell+cell/2, cy=r*cell+cell/2;
+        const s=cell*0.3;
+        // 画铁链：两个环
+        ctx.beginPath(); ctx.arc(cx-s*0.5,cy,s*0.45,0,Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx+s*0.5,cy,s*0.45,0,Math.PI*2); ctx.stroke();
+        ctx.restore();
+      }
+    }
+  };
+
+  // 关卡配置
   const LEVELS = [
-    { moves:20, stars:[400,700,1000], goal:{type:'score',target:1000}, ice:0 },
-    { moves:20, stars:[500,850,1200], goal:{type:'score',target:1200}, ice:0 },
-    { moves:19, stars:[600,1000,1400], goal:{type:'collect',color:0,target:25}, ice:0 },
-    { moves:19, stars:[700,1100,1500], goal:{type:'collect',color:4,target:25}, ice:1 },
-    { moves:18, stars:[800,1200,1600], goal:{type:'score',target:1600}, ice:1 },
-    { moves:18, stars:[900,1300,1800], goal:{type:'collect',color:3,target:30}, ice:1 },
-    { moves:17, stars:[1000,1500,2000], goal:{type:'score',target:2000}, ice:2 },
-    { moves:17, stars:[1100,1600,2200], goal:{type:'collect',color:1,target:30}, ice:2 },
-    { moves:16, stars:[1200,1800,2500], goal:{type:'score',target:2500}, ice:1 },
-    { moves:16, stars:[1400,2000,2800], goal:{type:'collect',color:5,target:35}, ice:2 },
+    { moves:20, stars:[400,700,1000], goal:{type:'score',target:1000}, ice:0, chain:0 },
+    { moves:20, stars:[500,850,1200], goal:{type:'score',target:1200}, ice:0, chain:0 },
+    { moves:19, stars:[600,1000,1400], goal:{type:'collect',color:0,target:25}, ice:0, chain:0 },
+    { moves:19, stars:[700,1100,1500], goal:{type:'collect',color:4,target:25}, ice:1, chain:0 },
+    { moves:18, stars:[800,1200,1600], goal:{type:'score',target:1600}, ice:1, chain:0 },
+    { moves:18, stars:[900,1300,1800], goal:{type:'collect',color:3,target:30}, ice:1, chain:0 },
+    { moves:17, stars:[1000,1500,2000], goal:{type:'score',target:2000}, ice:2, chain:0 },
+    { moves:17, stars:[1100,1600,2200], goal:{type:'collect',color:1,target:30}, ice:2, chain:0 },
+    { moves:16, stars:[1200,1800,2500], goal:{type:'score',target:2500}, ice:1, chain:1 },
+    { moves:16, stars:[1400,2000,2800], goal:{type:'collect',color:5,target:35}, ice:2, chain:1 },
+    { moves:16, stars:[1500,2200,3000], goal:{type:'score',target:3000}, ice:0, chain:1 },
+    { moves:16, stars:[1600,2300,3200], goal:{type:'collect',color:2,target:35}, ice:1, chain:1 },
+    { moves:15, stars:[1800,2500,3500], goal:{type:'score',target:3500}, ice:2, chain:1 },
+    { moves:15, stars:[2000,2800,3800], goal:{type:'collect',color:0,target:40}, ice:1, chain:2 },
+    { moves:15, stars:[2200,3000,4000], goal:{type:'score',target:4000}, ice:2, chain:2 },
   ];
   const DAILY_EXTRA_MAX = 4;
 
   // ===== 存档 =====
   const SAVE_KEY='xiaoxiaole_save_v1';
-  function defaultSave(){ return { highestUnlocked:1, stars:{}, settings:{sound:true,vibrate:true}, daily:{date:'',extraLeft:DAILY_EXTRA_MAX} }; }
+  function defaultSave(){ return { highestUnlocked:1, stars:{}, settings:{sound:true,vibrate:true}, daily:{date:'',extraLeft:DAILY_EXTRA_MAX}, winStreak:0 }; }
   let save = (()=>{ try{ const s=JSON.parse(localStorage.getItem(SAVE_KEY)); return s?Object.assign(defaultSave(),s):defaultSave(); }catch(e){ return defaultSave(); } })();
   function persist(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }catch(e){} }
   function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -381,19 +491,25 @@
   function randType(){ return Math.floor(Math.random()*TYPES); }
   function newGrid(){
     grid=[];
-    const iceLevel = LEVELS[currentLevel].ice || 0;
+    const lv=LEVELS[currentLevel];
     for(let c=0;c<COLS;c++){
       grid[c]=[];
       for(let r=0;r<ROWS;r++){
-        let obstacle = null;
-        if(iceLevel>0 && Math.random()<0.18){
-          obstacle = iceLevel>=2 && Math.random()<0.4 ? 'ice2' : 'ice1';
+        let obstacle=null;
+        // 冰块
+        if((lv.ice||0)>0 && Math.random()<0.18){
+          obstacle = lv.ice>=2 && Math.random()<0.4 ? 'ice2' : 'ice1';
+        }
+        // 铁链
+        if(!obstacle && (lv.chain||0)>0 && Math.random()<0.12){
+          obstacle = 'chain';
         }
         grid[c][r]={type:randType(), special:null, obstacle};
       }
     }
     while(findClusters().length>0){
-      for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++) grid[c][r].type=randType();
+      for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++)
+        if(!grid[c][r].obstacle) grid[c][r].type=randType();
     }
     if(!hasValidMove()) return newGrid();
     syncVis();
@@ -424,7 +540,7 @@
   }
   function hasValidMove(){
     for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
-      if(grid[c][r].obstacle) continue; // 冰块格不可交换
+      if(grid[c][r].obstacle) continue;
       if(c+1<COLS && !grid[c+1][r].obstacle){ swapType(c,r,c+1,r); const h=findClusters().length>0; swapType(c,r,c+1,r); if(h) return true; }
       if(r+1<ROWS && !grid[c][r+1].obstacle){ swapType(c,r,c,r+1); const h=findClusters().length>0; swapType(c,r,c,r+1); if(h) return true; }
     }
@@ -474,52 +590,16 @@
       ctx.restore();
       ctx.fillStyle='rgba(255,255,255,.4)';
       ctx.beginPath(); ctx.arc(v.x-size*0.18,v.y-size*0.18,size*0.12,0,Math.PI*2); ctx.fill();
-      if(v.special){
+      // 特殊元素视觉（查表）
+      if(v.special && SPECIALS[v.special]){
         ctx.save(); ctx.globalAlpha=v.alpha;
         ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=2;
-        const r=size/2;
-        if(v.special==='h'){
-          ctx.beginPath();
-          ctx.moveTo(v.x-r*.7,v.y-r*.3); ctx.lineTo(v.x+r*.7,v.y-r*.3);
-          ctx.moveTo(v.x-r*.7,v.y+r*.3); ctx.lineTo(v.x+r*.7,v.y+r*.3);
-          ctx.stroke();
-        } else if(v.special==='v'){
-          ctx.beginPath();
-          ctx.moveTo(v.x-r*.3,v.y-r*.7); ctx.lineTo(v.x-r*.3,v.y+r*.7);
-          ctx.moveTo(v.x+r*.3,v.y-r*.7); ctx.lineTo(v.x+r*.3,v.y+r*.7);
-          ctx.stroke();
-        } else if(v.special==='bomb'){
-          ctx.fillStyle='#FFD54F';
-          ctx.beginPath(); ctx.arc(v.x,v.y,r*.3,0,Math.PI*2); ctx.fill();
-          ctx.strokeStyle='#FFEB3B'; ctx.lineWidth=1.5;
-          ctx.beginPath(); ctx.arc(v.x,v.y,r*.55,0,Math.PI*2); ctx.stroke();
-        } else if(v.special==='rainbow'){
-          // 彩虹球：白色发光球 + 虹彩外圈
-          const grad=ctx.createRadialGradient(v.x,v.y,0,v.x,v.y,r*.7);
-          grad.addColorStop(0,'#ffffff');
-          grad.addColorStop(0.5,'#E1BEE7');
-          grad.addColorStop(1,'#7C4DFF');
-          ctx.fillStyle=grad;
-          ctx.beginPath(); ctx.arc(v.x,v.y,r*.7,0,Math.PI*2); ctx.fill();
-          const hues=[0,60,120,180,240,300];
-          hues.forEach((h,i)=>{
-            ctx.strokeStyle=`hsl(${h},90%,65%)`; ctx.lineWidth=2;
-            ctx.beginPath();
-            ctx.arc(v.x,v.y,r*.85, i*Math.PI/3, (i+0.7)*Math.PI/3);
-            ctx.stroke();
-          });
-        }
+        SPECIALS[v.special].draw(v,ctx,size/2);
         ctx.restore();
       }
-      // 冰块
-      if(v.obstacle){
-        ctx.save();
-        ctx.globalAlpha = v.obstacle==='ice2' ? 0.75 : 0.5;
-        ctx.fillStyle='#B3E5FC';
-        ctx.fillRect(c*cell+1, r*cell+1, cell-2, cell-2);
-        ctx.strokeStyle='#E1F5FE'; ctx.lineWidth=2;
-        ctx.strokeRect(c*cell+2, r*cell+2, cell-4, cell-4);
-        ctx.restore();
+      // 障碍物视觉（查表）
+      if(v.obstacle && OBSTACLES[v.obstacle]){
+        OBSTACLES[v.obstacle].draw(c,r,ctx,cell);
       }
     }
     if(selected){
@@ -553,28 +633,37 @@
   }
   function wait(d){ return new Promise(r=>setTimeout(r,d)); }
 
+  function pushSet(c,r,set,queue){
+    const k=c+','+r;
+    if(!set.has(k)){ set.add(k); queue.push({c,r}); }
+  }
+
   function expandSpecial(cells){
     const set=new Set(cells.map(({c,r})=>c+','+r));
     const queue=[...cells];
     while(queue.length){
       const {c,r}=queue.shift();
       const sp=grid[c][r]?.special;
-      if(!sp) continue;
-      let extra=[];
-      if(sp==='h'){ for(let i=0;i<COLS;i++) extra.push({c:i,r}); }
-      else if(sp==='v'){ for(let j=0;j<ROWS;j++) extra.push({c,r:j}); }
-      else if(sp==='bomb'){
-        for(let dc=-1;dc<=1;dc++) for(let dr=-1;dr<=1;dr++){
-          const nc=c+dc,nr=r+dr;
-          if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS) extra.push({c:nc,r:nr});
-        }
-      }
-      extra.forEach(({c:nc,r:nr})=>{
-        const k=nc+','+nr;
-        if(!set.has(k)){ set.add(k); queue.push({c:nc,r:nr}); }
-      });
+      if(!sp || !SPECIALS[sp] || !SPECIALS[sp].expand) continue;
+      SPECIALS[sp].expand(c,r,set,queue);
     }
     return [...set].map(k=>{ const [c,r]=k.split(',').map(Number); return {c,r}; });
+  }
+
+  // 破链：消除格的四邻如果是 chain，破链
+  function breakAdjacentChains(cells){
+    const seen=new Set();
+    cells.forEach(({c,r})=>{
+      [[c-1,r],[c+1,r],[c,r-1],[c,r+1]].forEach(([nc,nr])=>{
+        if(nc<0||nc>=COLS||nr<0||nr>=ROWS) return;
+        const k=nc+','+nr;
+        if(seen.has(k)) return; seen.add(k);
+        if(grid[nc][nr].obstacle==='chain'){
+          grid[nc][nr].obstacle=null;
+          vis[nc][nr].obstacle=null;
+        }
+      });
+    });
   }
 
   async function resolveBoard(){
@@ -602,7 +691,7 @@
         }
       });
 
-      // L/T 交叉检测：横向与纵向 cluster 共享 cell → 升级 bomb
+      // L/T 交叉检测
       const hClusters=clusters.filter(c=>c.horizontal);
       const vClusters=clusters.filter(c=>!c.horizontal);
       hClusters.forEach(h=>{
@@ -611,7 +700,6 @@
             const hc=h.col+i, hr=h.row;
             const vc=v.col, vr=v.row+j;
             if(hc===vc && hr===vr){
-              // 交叉点升级 bomb
               const already=spawnAt.find(x=>x.c===hc&&x.r===hr);
               if(already) already.special='bomb';
               else { spawnAt.push({c:hc,r:hr,special:'bomb'}); removeSet.delete(hc+','+hr); }
@@ -625,15 +713,18 @@
 
       spawnAt.forEach(({c,r,special})=>{ grid[c][r].special=special; vis[c][r].special=special; });
 
-      // 收集计数 + 冰块处理
+      // 破链
+      breakAdjacentChains(cells);
+
       const goal=LEVELS[currentLevel].goal;
       cells.forEach(({c,r})=>{
         if(grid[c][r].type<0) return;
         if(goal.type==='collect' && grid[c][r].type===goal.color) collectCount++;
         spawnParticles(c,r,GEMS[grid[c][r].type]?.color||'#fff');
-        // 破冰
-        if(grid[c][r].obstacle==='ice2') grid[c][r].obstacle='ice1';
-        else if(grid[c][r].obstacle==='ice1') grid[c][r].obstacle=null;
+        // 障碍物受击（查表）
+        if(grid[c][r].obstacle && OBSTACLES[grid[c][r].obstacle]){
+          grid[c][r].obstacle = OBSTACLES[grid[c][r].obstacle].hit();
+        }
         grid[c][r].type=-1;
       });
 
@@ -668,7 +759,6 @@
       }
       for(let r=write;r>=0;r--){
         grid[c][r].type=randType(); grid[c][r].special=null;
-        // 保留原列顶部 obstacle（如果有），不重新生成
         vis[c][r]={x:c*cell+cell/2,y:-cell+cell/2,scale:1,alpha:1,type:grid[c][r].type,special:null,obstacle:null};
       }
     }
@@ -697,14 +787,13 @@
     }
   }
 
-  // 通关剩余步数自动引爆
   async function triggerEndFuse(){
     busy=true;
-    const fuse=Math.min(moves, 8); // 最多爆 8 颗
+    const fuse=Math.min(moves, 8);
     let attempts=0;
     while(attempts<fuse){
       const c=Math.floor(Math.random()*COLS), r=Math.floor(Math.random()*ROWS);
-      if(grid[c][r].type<0 || grid[c][r].special) { attempts++; continue; }
+      if(grid[c][r].type<0 || grid[c][r].special || grid[c][r].obstacle) { attempts++; continue; }
       grid[c][r].special='bomb';
       vis[c][r].special='bomb';
       attempts++;
@@ -735,7 +824,6 @@
       if(currentLevel+2>save.highestUnlocked && currentLevel+1<LEVELS.length){
         save.highestUnlocked=currentLevel+2;
       }
-      // 连胜奖励
       save.winStreak=(save.winStreak||0)+1;
       if([3,5,8].includes(save.winStreak)){
         hammerCount+=1;
@@ -774,7 +862,6 @@
     }
   }
 
-  // ===== 视图 =====
   function showView(name){
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     document.getElementById('view-'+name).classList.add('active');
@@ -808,7 +895,6 @@
     document.getElementById('hammer-count').textContent=hammerCount;
     document.getElementById('shuffle-count').textContent=shuffleCount;
     updateStreakDisplay();
-    // HUD 目标显示
     const goalEl=document.getElementById('goal-display');
     if(lv.goal.type==='score'){
       goalEl.innerHTML=`<span id="goal-text">${lv.goal.target}</span>`;
@@ -838,29 +924,30 @@
   }
   function adjacent(a,b){ return Math.abs(a.col-b.col)+Math.abs(a.row-b.row)===1; }
 
+  function hammerUse(p){
+    if(hammerCount<=0) return;
+    hammerCount--;
+    document.getElementById('hammer-count').textContent=hammerCount;
+    document.getElementById('tool-hammer').classList.remove('active');
+    activeTool=null;
+    const goal=LEVELS[currentLevel].goal;
+    if(goal.type==='collect' && grid[p.col][p.row].type===goal.color) collectCount++;
+    spawnParticles(p.col,p.row,GEMS[grid[p.col][p.row].type]?.color||'#fff');
+    if(grid[p.col][p.row].obstacle && OBSTACLES[grid[p.col][p.row].obstacle]){
+      grid[p.col][p.row].obstacle = OBSTACLES[grid[p.col][p.row].obstacle].hit();
+    }
+    grid[p.col][p.row].type=-1;
+    score+=10; updateHUD();
+    busy=true;
+    collapseAndRefill();
+    setTimeout(()=>{ busy=false; afterMove(); }, 300);
+  }
+
   canvas.addEventListener('touchstart',e=>{
     e.preventDefault(); ensureAudio();
     const t=e.touches[0]; const p=canvasPos(t); touchStart=p;
     if(busy) return;
-    // 锤子模式
-    if(activeTool==='hammer'){
-      if(hammerCount<=0) return;
-      hammerCount--;
-      document.getElementById('hammer-count').textContent=hammerCount;
-      document.getElementById('tool-hammer').classList.remove('active');
-      activeTool=null;
-      const goal=LEVELS[currentLevel].goal;
-      if(goal.type==='collect' && grid[p.col][p.row].type===goal.color) collectCount++;
-      spawnParticles(p.col,p.row,GEMS[grid[p.col][p.row].type]?.color||'#fff');
-      if(grid[p.col][p.row].obstacle==='ice2') grid[p.col][p.row].obstacle='ice1';
-      else if(grid[p.col][p.row].obstacle==='ice1') grid[p.col][p.row].obstacle=null;
-      grid[p.col][p.row].type=-1;
-      score+=10; updateHUD();
-      busy=true;
-      collapseAndRefill();
-      setTimeout(()=>{ busy=false; afterMove(); }, 300);
-      return;
-    }
+    if(activeTool==='hammer'){ hammerUse(p); return; }
     if(selected){
       if(adjacent(selected,p)){ doSwap(selected,p); selected=null; return; }
       if(p.col===selected.col && p.row===selected.row){ selected=null; return; }
@@ -883,31 +970,12 @@
     if(busy) return;
     const rect=canvas.getBoundingClientRect();
     const p={col:Math.floor((e.clientX-rect.left)/cell),row:Math.floor((e.clientY-rect.top)/cell)};
-    // 锤子模式：消除任意格
-    if(activeTool==='hammer'){
-      if(hammerCount<=0) return;
-      hammerCount--;
-      document.getElementById('hammer-count').textContent=hammerCount;
-      document.getElementById('tool-hammer').classList.remove('active');
-      activeTool=null;
-      const goal=LEVELS[currentLevel].goal;
-      if(goal.type==='collect' && grid[p.col][p.row].type===goal.color) collectCount++;
-      spawnParticles(p.col,p.row,GEMS[grid[p.col][p.row].type]?.color||'#fff');
-      if(grid[p.col][p.row].obstacle==='ice2') grid[p.col][p.row].obstacle='ice1';
-      else if(grid[p.col][p.row].obstacle==='ice1') grid[p.col][p.row].obstacle=null;
-      grid[p.col][p.row].type=-1;
-      score+=10; updateHUD();
-      busy=true;
-      collapseAndRefill();
-      setTimeout(()=>{ busy=false; afterMove(); }, 300);
-      return;
-    }
+    if(activeTool==='hammer'){ hammerUse(p); return; }
     if(selected && adjacent(selected,p)){ doSwap(selected,p); selected=null; return; }
     selected=p;
   });
 
   async function doSwap(a,b){
-    // 冰块格不能作为交换起点
     if(grid[a.col][a.row].obstacle || grid[b.col][b.row].obstacle) return;
     busy=true;
     swapType(a.col,a.row,b.col,b.row);
@@ -934,7 +1002,6 @@
         for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
           if(grid[c][r].type===targetType) cells.push({c,r});
         }
-        // 彩虹球自己也消耗
         cells.push({c:rainbowPos.col, r:rainbowPos.row});
       }
       const goal=LEVELS[currentLevel].goal;
@@ -942,10 +1009,12 @@
         if(grid[c][r].type<0) return;
         if(goal.type==='collect' && grid[c][r].type===goal.color) collectCount++;
         spawnParticles(c,r,GEMS[grid[c][r].type]?.color||'#fff');
-        if(grid[c][r].obstacle==='ice2') grid[c][r].obstacle='ice1';
-        else if(grid[c][r].obstacle==='ice1') grid[c][r].obstacle=null;
+        if(grid[c][r].obstacle && OBSTACLES[grid[c][r].obstacle]){
+          grid[c][r].obstacle = OBSTACLES[grid[c][r].obstacle].hit();
+        }
         grid[c][r].type=-1;
       });
+      breakAdjacentChains(cells);
       score+=cells.length*10; updateHUD();
       vibrate([50,50,50]);
       const w=document.getElementById('board-wrap'); w.classList.remove('shake'); void w.offsetWidth; w.classList.add('shake');
@@ -961,8 +1030,9 @@
       return;
     }
 
-    // ===== 组合技检测：两个特殊宝石交换 =====
-    if(sa && sb){
+    // ===== 组合技（查表） =====
+    const comboType=getCombo(sa,sb);
+    if(comboType){
       sfx.swap();
       await new Promise(res=>{
         tweenVis([
@@ -970,26 +1040,19 @@
           {v:vis[b.col][b.row],fx:b.col*cell+cell/2,fy:b.row*cell+cell/2},
         ],150,res);
       });
-      // 两个 special 都触发
-      const triggerCells=[{c:a.col,r:a.row},{c:b.col,r:b.row}];
-      // bomb+bomb → 5×5
-      if(sa==='bomb' && sb==='bomb'){
-        const extra=[];
+      let triggerCells=[{c:a.col,r:a.row},{c:b.col,r:b.row}];
+      if(comboType==='bigBomb'){
         triggerCells.forEach(({c,r})=>{
           for(let dc=-2;dc<=2;dc++) for(let dr=-2;dr<=2;dr++){
             const nc=c+dc,nr=r+dr;
-            if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS) extra.push({c:nc,r:nr});
+            if(nc>=0&&nc<COLS&&nr>=0&&nr<ROWS) triggerCells.push({c:nc,r:nr});
           }
         });
-        triggerCells=triggerCells.concat(extra);
-      }
-      // h+v → 十字（整行+整列）
-      else if((sa==='h'&&sb==='v')||(sa==='v'&&sb==='h')){
+      } else if(comboType==='cross'){
         const c1=triggerCells[0].c, r1=triggerCells[0].r;
         for(let i=0;i<COLS;i++) triggerCells.push({c:i,r:r1});
         for(let j=0;j<ROWS;j++) triggerCells.push({c:c1,r:j});
       }
-      // 去重并消除
       const seen=new Set();
       const cells=[];
       triggerCells.forEach(({c,r})=>{ const k=c+','+r; if(!seen.has(k)){ seen.add(k); cells.push({c,r}); } });
@@ -998,10 +1061,12 @@
         if(grid[c][r].type<0) return;
         if(goal.type==='collect' && grid[c][r].type===goal.color) collectCount++;
         spawnParticles(c,r,GEMS[grid[c][r].type]?.color||'#fff');
-        if(grid[c][r].obstacle==='ice2') grid[c][r].obstacle='ice1';
-        else if(grid[c][r].obstacle==='ice1') grid[c][r].obstacle=null;
+        if(grid[c][r].obstacle && OBSTACLES[grid[c][r].obstacle]){
+          grid[c][r].obstacle = OBSTACLES[grid[c][r].obstacle].hit();
+        }
         grid[c][r].type=-1;
       });
+      breakAdjacentChains(cells);
       score+=cells.length*10; updateHUD();
       vibrate([30,50,30]);
       const w=document.getElementById('board-wrap'); w.classList.remove('shake'); void w.offsetWidth; w.classList.add('shake');
@@ -1078,7 +1143,6 @@
     endGame(false);
   });
 
-  // ===== 道具 =====
   document.getElementById('tool-hammer').addEventListener('click',()=>{
     if(hammerCount<=0||busy) return;
     activeTool = activeTool==='hammer' ? null : 'hammer';
@@ -1089,7 +1153,6 @@
     shuffleCount--;
     document.getElementById('shuffle-count').textContent=shuffleCount;
     busy=true;
-    // 简单重排：重新随机类型直到无 cluster
     for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
       if(!grid[c][r].obstacle) grid[c][r].type=randType();
     }
@@ -1116,7 +1179,6 @@
     window.addEventListener('load',()=>{ navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
   }
 
-  // 每日首次登录问候
   (function dailyGreet(){
     const KEY='xiaoxiaole_last_greet';
     const today=new Date().toISOString().slice(0,10);
