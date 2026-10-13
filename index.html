@@ -834,6 +834,25 @@
     e.preventDefault(); ensureAudio();
     const t=e.touches[0]; const p=canvasPos(t); touchStart=p;
     if(busy) return;
+    // 锤子模式
+    if(activeTool==='hammer'){
+      if(hammerCount<=0) return;
+      hammerCount--;
+      document.getElementById('hammer-count').textContent=hammerCount;
+      document.getElementById('tool-hammer').classList.remove('active');
+      activeTool=null;
+      const goal=LEVELS[currentLevel].goal;
+      if(goal.type==='collect' && grid[p.col][p.row].type===goal.color) collectCount++;
+      spawnParticles(p.col,p.row,GEMS[grid[p.col][p.row].type]?.color||'#fff');
+      if(grid[p.col][p.row].obstacle==='ice2') grid[p.col][p.row].obstacle='ice1';
+      else if(grid[p.col][p.row].obstacle==='ice1') grid[p.col][p.row].obstacle=null;
+      grid[p.col][p.row].type=-1;
+      score+=10; updateHUD();
+      busy=true;
+      collapseAndRefill();
+      setTimeout(()=>{ busy=false; afterMove(); }, 300);
+      return;
+    }
     if(selected){
       if(adjacent(selected,p)){ doSwap(selected,p); selected=null; return; }
       if(p.col===selected.col && p.row===selected.row){ selected=null; return; }
@@ -902,10 +921,13 @@
         for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++) cells.push({c,r});
       } else {
         const otherPos = sa==='rainbow' ? b : a;
+        const rainbowPos = sa==='rainbow' ? a : b;
         const targetType = grid[otherPos.col][otherPos.row].type;
         for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
           if(grid[c][r].type===targetType) cells.push({c,r});
         }
+        // 彩虹球自己也消耗
+        cells.push({c:rainbowPos.col, r:rainbowPos.row});
       }
       const goal=LEVELS[currentLevel].goal;
       cells.forEach(({c,r})=>{
