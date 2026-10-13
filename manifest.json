@@ -1,6 +1,6 @@
 {
-  "name": "消消乐",
-  "short_name": "消消乐",
+  "name": "飘飘雨的消消乐",
+  "short_name": "飘飘雨消消乐",
   "description": "竖屏三消小游戏",
   "start_url": "./",
   "scope": "./",
