@@ -680,13 +680,12 @@
 
   function afterMove(){
     if(!hasValidMove()){ newGrid(); return; }
+    if(isGoalReached()){
+      triggerEndFuse().then(()=>endGame(true));
+      return;
+    }
     if(moves<=0){
-      if(isGoalReached()){
-        // 通关：剩余步数自动引爆
-        triggerEndFuse().then(()=>endGame(true));
-      } else {
-        askExtraMove();
-      }
+      askExtraMove();
     }
   }
 
