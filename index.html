@@ -329,6 +329,7 @@
   let score=0, moves=0, busy=false, selected=null, combo=0;
   let currentLevel=0, collectCount=0;
   let hammerCount=1, shuffleCount=1, activeTool=null;
+  let ending=false;
 
   // ===== Canvas =====
   const canvas=document.getElementById('board');
@@ -682,8 +683,10 @@
   }
 
   function afterMove(){
+    if(ending) return;
     if(!hasValidMove()){ newGrid(); return; }
     if(isGoalReached()){
+      ending=true;
       triggerEndFuse().then(()=>endGame(true));
       return;
     }
@@ -798,7 +801,7 @@
     currentLevel=idx;
     const lv=LEVELS[idx];
     score=0; moves=lv.moves; selected=null; particles=[]; combo=0; collectCount=0;
-    hammerCount=1; shuffleCount=1; activeTool=null;
+    hammerCount=1; shuffleCount=1; activeTool=null; ending=false;
     document.getElementById('level-label').textContent=`第 ${idx+1} 关`;
     document.getElementById('hammer-count').textContent=hammerCount;
     document.getElementById('shuffle-count').textContent=shuffleCount;
